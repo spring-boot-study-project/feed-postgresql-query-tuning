@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  feed-service-postgres:
+    image: postgres:latest
+    container_name: feed-service-postgres
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: donghyeon
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: feed-service
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U donghyeon -d feed-service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - feed-service-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  feed-service-postgres-data:
