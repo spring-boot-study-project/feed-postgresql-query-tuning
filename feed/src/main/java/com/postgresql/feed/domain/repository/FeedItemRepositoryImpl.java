@@ -101,6 +101,112 @@ public class FeedItemRepositoryImpl implements FeedItemRepositoryCustom {
                 .or(privateCondition) // private인 경우 본인 데이터 가져오기
                 .or(mentionCondition);
     }
+    
+    @Override
+    public List<FeedItemDto> findPublicFeedsOnly(int limit) {
+        BooleanExpression existHighlight = feedItem.highlightCount.gt(0);
+        BooleanExpression publicCondition = feedItem.visibility.eq(FeedVisibility.PUBLIC);
+
+        List<Long> feedItemIds = queryFactory
+                .select(feedItem.id)
+                .from(feedItem)
+                .where(publicCondition.and(existHighlight))
+                .orderBy(
+                    feedItem.firstHighlightAt.desc(),
+                    feedItem.id.desc()
+                )
+                .limit(limit)
+                .fetch();
+
+        if (feedItemIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return queryFactory
+                .select(
+                    new QFeedItemDto(
+                        feedItem.id,
+                        new QUserDto(
+                            user.id,
+                            user.username,
+                            user.nickName),
+                        new QPageDto(
+                            page.id,
+                            page.url,
+                            page.title,
+                            page.domain),
+                        Expressions.constant(Collections.emptyList()),
+                        feedItem.highlightCount,
+                        feedItem.firstHighlightAt)
+                )
+                .from(feedItem)
+                .join(feedItem.user, user)
+                .join(feedItem.page, page)
+                .where(feedItem.id.in(feedItemIds))
+                .orderBy(
+                        feedItem.firstHighlightAt.desc(),
+                        feedItem.id.desc())
+                .fetch();
+    }
+    
+    @Override
+    public List<FeedItemDto> findPrivateAndMentionedFeeds(Long userId, int limit) {
+        BooleanExpression existHighlight = feedItem.highlightCount.gt(0);
+        BooleanExpression privateCondition = feedItem.visibility.eq(FeedVisibility.PRIVATE).and(feedItem.user.id.eq(userId));
+        
+        // mention 조건을 EXISTS 서브쿼리로 변경하여 조인 없이 처리
+        BooleanExpression mentionCondition = feedItem.visibility.eq(FeedVisibility.MENTIONED)
+                .and(JPAExpressions.selectOne()
+                        .from(mention)
+                        .join(mention.highlight, highlight)
+                        .where(
+                                highlight.page.eq(feedItem.page)
+                                        .and(mention.mentionedUser.id.eq(userId)))
+                        .exists());
+
+        List<Long> feedItemIds = queryFactory
+                .select(feedItem.id)
+                .from(feedItem)
+                .where(
+                    privateCondition.or(mentionCondition)
+                        .and(existHighlight))
+                .orderBy(
+                    feedItem.firstHighlightAt.desc(),
+                    feedItem.id.desc()
+                )
+                .limit(limit)
+                .fetch();
+
+        if (feedItemIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return queryFactory
+                .select(
+                    new QFeedItemDto(
+                        feedItem.id,
+                        new QUserDto(
+                            user.id,
+                            user.username,
+                            user.nickName),
+                        new QPageDto(
+                            page.id,
+                            page.url,
+                            page.title,
+                            page.domain),
+                        Expressions.constant(Collections.emptyList()),
+                        feedItem.highlightCount,
+                        feedItem.firstHighlightAt)
+                )
+                .from(feedItem)
+                .join(feedItem.user, user)
+                .join(feedItem.page, page)
+                .where(feedItem.id.in(feedItemIds))
+                .orderBy(
+                        feedItem.firstHighlightAt.desc(),
+                        feedItem.id.desc())
+                .fetch();
+    }
 
     private BooleanExpression createCursorCondition(LocalDateTime cursorFirstHighlightAt, Long cursorId) {
         if(cursorFirstHighlightAt == null || cursorId == null) {
