@@ -84,3 +84,81 @@
 조건에 대한 부분을 서브 쿼리로 따로 분리하여 조회를 하여 부하를 줄이고 인덱스를 타게 하도록 개선하자.
 
 # 두 번째 쿼리 시도
+
+## 최적화된 쿼리 성능 분석
+
+### 실행 통계 분석 (최적화 후)
+![쿼리 통계 분석](./image/statistics_sc_2.png "쿼리 통계 분석")
+```
+첫 번째 쿼리 (ID 조회): 0ms, 21 rows
+두 번째 쿼리 (피드 목록 조회): 1ms, 21 rows  
+세 번째 쿼리 (하이라이트 조회): 1ms, 20 rows
+총 JDBC 실행 시간: 215,610,000 nanoseconds (약 0.216초)
+```
+
+### 최적화 성과
+![1번째 쿼리 플랜](./image/query_plan_2(feedItem).png "쿼리 플랜")
+![2번째 쿼리 플랜](./image/query_plan_2(feedItem_2).png "쿼리 플랜")
+![3번째 쿼리 플랜](./image/query_plan_2(feedItem_3).png "쿼리 플랜")
+쿼리 플랜 분석 : 각 쿼리 별로 쿼리가 인덱스를 잘 타고 있는 모습을 확인할 수 있었고 
+
+![4번째 쿼리 플랜](./image/query_plan_2(feedItem_4).png "쿼리 플랜")
+쿼리에서 정렬이 외부 정렬이 아닌 내부 정렬 즉 퀵 정렬을 사용하는 모습을 볼 수 있었다.
+
+1. **극적인 성능 개선**
+   - **실행 시간**: 1.77초 → 0.216초 (약 **8.2배 개선**)
+   - **쿼리 개수**: 2개 → 3개 (단계별 최적화)
+   - **각 쿼리 실행 시간**: 15ms → 0-1ms
+
+2. **쿼리 구조 최적화**
+   ```sql
+   -- 첫 번째 쿼리: EXISTS 서브쿼리 활용
+   SELECT fi1_0.id
+   FROM feed_items fi1_0
+   WHERE (
+       fi1_0.visibility = 'PUBLIC'
+       OR (fi1_0.visibility = 'PRIVATE' AND fi1_0.user_id = ?)
+       OR (fi1_0.visibility = 'MENTIONED' AND EXISTS(
+           SELECT 1 FROM mentions m1_0
+           JOIN highlights h1_0 ON h1_0.id = m1_0.highlight_id
+           WHERE h1_0.page_id = fi1_0.page_id AND m1_0.mentioned_user_id = ?
+       ))
+   )
+   AND fi1_0.highlight_count > ?
+   ORDER BY fi1_0.first_highlight_at DESC, fi1_0.id DESC
+   LIMIT 20;
+   ```
+   - **LEFT JOIN 제거**: EXISTS 서브쿼리로 대체
+   - **GROUP BY 제거**: 중복 데이터 문제 해결
+   - **조건 추가**: `highlight_count > 0` 필터링
+
+3. **단계별 쿼리 분리**
+   ```sql
+   -- 두 번째 쿼리: IN 절 활용
+   SELECT fi1_0.id, u1_0.id, u1_0.username, ...
+   FROM feed_items fi1_0
+   JOIN users u1_0 ON u1_0.id = fi1_0.user_id
+   JOIN pages p1_0 ON p1_0.id = fi1_0.page_id
+   WHERE fi1_0.id IN (?, ?, ?, ...)
+   ORDER BY fi1_0.first_highlight_at DESC, fi1_0.id DESC;
+   ```
+   - **단순한 INNER JOIN**: 복잡한 조건 제거
+   - **IN 절 활용**: 첫 번째 쿼리 결과 활용
+
+4. 하이라이트 조회
+    - 변경없습니다.
+
+### 최적화 기법 분석
+
+1. **쿼리 분리 전략**
+   - 복잡한 단일 쿼리를 3개의 단순한 쿼리로 분리
+   - 각 쿼리의 목적과 역할 명확화
+   - 네트워크 오버헤드보다 쿼리 복잡도 감소 효과가 더 큼
+
+2. **EXISTS vs LEFT JOIN**
+   - EXISTS: 존재 여부만 확인, 데이터 증폭 없음
+   - LEFT JOIN: 실제 데이터 조인, GROUP BY 필요
+   - 멘션 조건 확인에는 EXISTS가 더 효율적임임
+
+3. **인덱스 활용도 개선**
+   - 단순한 WHERE 조건으로 인덱스 활용도 증가

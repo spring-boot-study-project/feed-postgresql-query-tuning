@@ -13,6 +13,7 @@ import com.postgresql.feed.dto.QPageDto;
 import com.postgresql.feed.dto.QUserDto;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 
 import lombok.RequiredArgsConstructor;
@@ -30,48 +31,50 @@ public class FeedItemRepositoryImpl implements FeedItemRepositoryCustom {
 
     @Override
     public List<FeedItemDto> findFeedItemsWithUserAndPage(Long userId, int limit, LocalDateTime cursorFirstHighlightAt, Long cursorId) {
+        BooleanExpression existHighlight = feedItem.highlightCount.gt(0);
+
+        List<Long> feedItemIds = queryFactory // 이 시점에서 조건에 맞는 데이터 조회
+                .select(feedItem.id)
+                .from(feedItem)
+                .where(
+                    createVisibilityCondition(userId)
+                        .and(createCursorCondition(cursorFirstHighlightAt, cursorId))
+                        .and(existHighlight))
+                .orderBy(
+                    feedItem.firstHighlightAt.desc(), // 과제 조건에 따라 최신순으로 내림차순 정렬
+                    feedItem.id.desc()
+                )
+                .limit(limit)
+                .fetch();
+
+        if (feedItemIds.isEmpty()) { // 없어면 데이터 빈 데이터로 변경
+            return Collections.emptyList();
+        }
+
         return queryFactory
                 .select(
                     new QFeedItemDto(
                         feedItem.id,
                         new QUserDto(
-                                user.id,
-                                user.username,
-                                user.nickName),
+                            user.id,
+                            user.username,
+                            user.nickName),
                         new QPageDto(
-                                page.id,
-                                page.url,
-                                page.title,
-                                page.domain),
-                        Expressions.constant(Collections.emptyList()), // 이시점에서는 하이라이트 정보가 없으므로 빈 리스트
+                            page.id,
+                            page.url,
+                            page.title,
+                            page.domain),
+                        Expressions.constant(Collections.emptyList()), // 이시점에서는 하이라이트 정보가 없으므로 null
                         feedItem.highlightCount,
                         feedItem.firstHighlightAt)
                 )
-                .from(feedItem) // feedItem.id, feedItem.page_id, feedItem.user_id 이 값을 가지고 inner 조인
-                .join(feedItem.user, user) // inner 조인 -> DTO 프로젝션 조인에서는 즉시/지연 로딩 개념이 없다 .fetchJoin() 필요 x
-                .join(feedItem.page, page) // inner 조인 -> DTO 프로젝션 조인에서는 즉시/지연 로딩 개념이 없다 .fetchJoin() 필요 x
-                .leftJoin(highlight).on(highlight.page.id.eq(page.id).and(highlight.user.id.eq(feedItem.user.id)))
-                .leftJoin(mention).on(mention.highlight.id.eq(highlight.id))
-                .where(
-                    createVisibilityCondition(userId)
-                    .and(createCursorCondition(cursorFirstHighlightAt, cursorId))
-                )
-                .groupBy(
-                        feedItem.id,
-                        user.id,
-                        user.username,
-                        page.id,
-                        page.url,
-                        page.title,
-                        page.domain,
-                        feedItem.highlightCount,
-                        feedItem.firstHighlightAt
-                ) // group by를 통해서 행들을 하나로 합친다.
+                .from(feedItem)
+                .join(feedItem.user, user)
+                .join(feedItem.page, page)
+                .where(feedItem.id.in(feedItemIds))
                 .orderBy(
-                        feedItem.firstHighlightAt.desc(), //과제 조건에 따라 최신순으로 내림차순 정렬
-                        feedItem.id.desc() // 앞서 나온 값이 동일한 값이 존재할 수 있기 때문에 이 경우 id 값으로 내림차순으로 정렬
-                )
-                .limit(limit)
+                        feedItem.firstHighlightAt.desc(), // 과제 조건에 따라 최신순으로 내림차순 정렬
+                        feedItem.id.desc())
                 .fetch();
     }
 
@@ -82,11 +85,21 @@ public class FeedItemRepositoryImpl implements FeedItemRepositoryCustom {
 
         BooleanExpression publicCondition = feedItem.visibility.eq(FeedVisibility.PUBLIC);
         BooleanExpression privateCondition = feedItem.visibility.eq(FeedVisibility.PRIVATE).and(feedItem.user.id.eq(userId));
-        BooleanExpression mentionCondition = feedItem.visibility.eq(FeedVisibility.MENTIONED).and(mention.mentionedUser.id.eq(userId));
-        
+
+        // mention 조건을 EXISTS 서브쿼리로 변경하여 조인 없이 처리
+        // mention -> highlight -> page -> feedItem 경로로 연결
+        BooleanExpression mentionCondition = feedItem.visibility.eq(FeedVisibility.MENTIONED)
+                .and(JPAExpressions.selectOne()
+                        .from(mention)
+                        .join(mention.highlight, highlight)
+                        .where(
+                                highlight.page.eq(feedItem.page)
+                                        .and(mention.mentionedUser.id.eq(userId)))
+                        .exists());
+
         return publicCondition // public인 경우 데이터 가져오기
                 .or(privateCondition) // private인 경우 본인 데이터 가져오기
-                .or(mentionCondition); // mention인 경우 데이터 가져오기
+                .or(mentionCondition);
     }
 
     private BooleanExpression createCursorCondition(LocalDateTime cursorFirstHighlightAt, Long cursorId) {

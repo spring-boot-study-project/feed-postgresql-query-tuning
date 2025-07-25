@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(name = "mentions", indexes = {
     @Index(name = "idx_mention_highlight_user", columnList = "highlight_id, mentioned_user_id", unique = true), // 복합 조건 최적화: JOIN(highlight_id) + WHERE(mentioned_user_id) + UNIQUE 제약
+    @Index(name = "idx_mention_user", columnList = "mentioned_user_id")
 })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
