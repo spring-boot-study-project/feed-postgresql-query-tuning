@@ -11,7 +11,12 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "feed_items")
+@Table(name = "feed_items", indexes = {
+    @Index(name = "idx_feed_user_first_highlight", columnList = "user_id, first_highlight_at DESC"), //visibility = 'PRIVATE' AND user_id = :userId 여기서 사용
+    @Index(name = "idx_feed_page", columnList = "page_id"), //highlight.page.eq(feedItem.page) 여기서 사용
+    @Index(name = "idx_feed_visibility", columnList = "visibility"), //feedItem.visibility.eq(FeedVisibility.PUBLIC) 여기서 사용
+    @Index(name = "idx_feed_visibility_user", columnList = "visibility, user_id"), //feedItem.visibility.eq(FeedVisibility.PRIVATE).and(feedItem.user.id.eq(userId)) 2, 3번째 조건에 대해서 인덱스
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class FeedItem extends BaseTimeEntity {

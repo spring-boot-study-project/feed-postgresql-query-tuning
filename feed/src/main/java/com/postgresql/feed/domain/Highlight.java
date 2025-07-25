@@ -9,7 +9,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "highlights")
+@Table(name = "highlights", indexes = {
+    @Index(name = "idx_highlight_page_created", columnList = "page_id, created_at DESC"), // highlight.page.eq(feedItem.page) page_id 단독 조건 (LEFT JOIN)
+    @Index(name = "idx_highlight_user_page_created", columnList = "user_id, page_id, created_at DESC") // WHERE h.user_id = :userId AND h.page_id IN :pageIds 복합 조건 최적화 (user_id + page_id + created_at)
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Highlight extends BaseTimeEntity {
