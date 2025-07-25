@@ -31,29 +31,11 @@ public class FeedItemRepositoryImpl implements FeedItemRepositoryCustom {
 
     @Override
     public List<FeedItemDto> findFeedItemsWithUserAndPage(Long userId, int limit, LocalDateTime cursorFirstHighlightAt, Long cursorId) {
-        BooleanExpression existHighlight = feedItem.highlightCount.gt(0);
+        BooleanExpression existHighlight = feedItem.highlightCount.gt(0); // 하이라이트가 있는지 없는지 확인
 
-        List<Long> feedItemIds = queryFactory // 이 시점에서 조건에 맞는 데이터 조회
-                .select(feedItem.id)
-                .from(feedItem)
-                .where(
-                    createVisibilityCondition(userId)
-                        .and(createCursorCondition(cursorFirstHighlightAt, cursorId))
-                        .and(existHighlight))
-                .orderBy(
-                    feedItem.firstHighlightAt.desc(), // 과제 조건에 따라 최신순으로 내림차순 정렬
-                    feedItem.id.desc()
-                )
-                .limit(limit)
-                .fetch();
-
-        if (feedItemIds.isEmpty()) { // 없어면 데이터 빈 데이터로 변경
-            return Collections.emptyList();
-        }
-
+        // 성능 최적화 분리했던 쿼리를 하나로 합침침
         return queryFactory
-                .select(
-                    new QFeedItemDto(
+                .select(new QFeedItemDto(
                         feedItem.id,
                         new QUserDto(
                             user.id,
@@ -64,19 +46,102 @@ public class FeedItemRepositoryImpl implements FeedItemRepositoryCustom {
                             page.url,
                             page.title,
                             page.domain),
-                        Expressions.constant(Collections.emptyList()), // 이시점에서는 하이라이트 정보가 없으므로 null
+                        Expressions.constant(Collections.emptyList()), // 하이라이트는 별도 조회
                         feedItem.highlightCount,
                         feedItem.firstHighlightAt)
                 )
                 .from(feedItem)
                 .join(feedItem.user, user)
                 .join(feedItem.page, page)
-                .where(feedItem.id.in(feedItemIds))
+                .where(
+                    createVisibilityCondition(userId) // 가시성 모두 확인
+                        .and(createCursorCondition(cursorFirstHighlightAt, cursorId)) // 커서 조건 확인
+                        .and(existHighlight)) // 하이라이트가 있는지 없는지 확인
                 .orderBy(
-                        feedItem.firstHighlightAt.desc(), // 과제 조건에 따라 최신순으로 내림차순 정렬
-                        feedItem.id.desc())
+                    feedItem.firstHighlightAt.desc(),
+                    feedItem.id.desc())
+                .limit(limit)
                 .fetch();
     }
+    
+    // @Override
+    // public List<FeedItemDto> findPublicFeedsOnly(int limit) {
+    //     BooleanExpression existHighlight = feedItem.highlightCount.gt(0);
+    //     BooleanExpression publicCondition = feedItem.visibility.eq(FeedVisibility.PUBLIC);
+
+    //     // 🚀 성능 최적화: 단일 쿼리로 통합
+    //     return queryFactory
+    //             .select(new QFeedItemDto(
+    //                     feedItem.id,
+    //                     new QUserDto(
+    //                         user.id,
+    //                         user.username,
+    //                         user.nickName),
+    //                     new QPageDto(
+    //                         page.id,
+    //                         page.url,
+    //                         page.title,
+    //                         page.domain),
+    //                     Expressions.constant(Collections.emptyList()),
+    //                     feedItem.highlightCount,
+    //                     feedItem.firstHighlightAt)
+    //             )
+    //             .from(feedItem)
+    //             .join(feedItem.user, user)  // DTO 프로젝션에서는 일반 JOIN으로 충분
+    //             .join(feedItem.page, page)  // DTO 프로젝션에서는 일반 JOIN으로 충분
+    //             .where(publicCondition.and(existHighlight))
+    //             .orderBy(
+    //                 feedItem.firstHighlightAt.desc(),
+    //                 feedItem.id.desc()
+    //             )
+    //             .limit(limit)
+    //             .fetch();
+    // }
+    
+    // @Override
+    // public List<FeedItemDto> findPrivateAndMentionedFeeds(Long userId, int limit) {
+    //     BooleanExpression existHighlight = feedItem.highlightCount.gt(0);
+    //     BooleanExpression privateCondition = feedItem.visibility.eq(FeedVisibility.PRIVATE).and(feedItem.user.id.eq(userId));
+        
+    //     // mention 조건을 EXISTS 서브쿼리로 변경하여 조인 없이 처리
+    //     BooleanExpression mentionCondition = feedItem.visibility.eq(FeedVisibility.MENTIONED)
+    //             .and(JPAExpressions.selectOne()
+    //                     .from(mention)
+    //                     .join(mention.highlight, highlight)
+    //                     .where(
+    //                             highlight.page.eq(feedItem.page)
+    //                                     .and(mention.mentionedUser.id.eq(userId)))
+    //                     .exists());
+
+    //     // 🚀 성능 최적화: 단일 쿼리로 통합
+    //     return queryFactory
+    //             .select(new QFeedItemDto(
+    //                     feedItem.id,
+    //                     new QUserDto(
+    //                         user.id,
+    //                         user.username,
+    //                         user.nickName),
+    //                     new QPageDto(
+    //                         page.id,
+    //                         page.url,
+    //                         page.title,
+    //                         page.domain),
+    //                     Expressions.constant(Collections.emptyList()),
+    //                     feedItem.highlightCount,
+    //                     feedItem.firstHighlightAt)
+    //             )
+    //             .from(feedItem)
+    //             .join(feedItem.user, user)  // DTO 프로젝션에서는 일반 JOIN으로 충분
+    //             .join(feedItem.page, page)  // DTO 프로젝션에서는 일반 JOIN으로 충분
+    //             .where(
+    //                 privateCondition.or(mentionCondition)
+    //                     .and(existHighlight))
+    //             .orderBy(
+    //                 feedItem.firstHighlightAt.desc(),
+    //                 feedItem.id.desc())
+    //             .limit(limit)
+    //             .fetch();
+    // }
 
     private BooleanExpression createVisibilityCondition(Long userId) {
         if(userId == null) {
@@ -100,112 +165,6 @@ public class FeedItemRepositoryImpl implements FeedItemRepositoryCustom {
         return publicCondition // public인 경우 데이터 가져오기
                 .or(privateCondition) // private인 경우 본인 데이터 가져오기
                 .or(mentionCondition);
-    }
-    
-    @Override
-    public List<FeedItemDto> findPublicFeedsOnly(int limit) {
-        BooleanExpression existHighlight = feedItem.highlightCount.gt(0);
-        BooleanExpression publicCondition = feedItem.visibility.eq(FeedVisibility.PUBLIC);
-
-        List<Long> feedItemIds = queryFactory
-                .select(feedItem.id)
-                .from(feedItem)
-                .where(publicCondition.and(existHighlight))
-                .orderBy(
-                    feedItem.firstHighlightAt.desc(),
-                    feedItem.id.desc()
-                )
-                .limit(limit)
-                .fetch();
-
-        if (feedItemIds.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        return queryFactory
-                .select(
-                    new QFeedItemDto(
-                        feedItem.id,
-                        new QUserDto(
-                            user.id,
-                            user.username,
-                            user.nickName),
-                        new QPageDto(
-                            page.id,
-                            page.url,
-                            page.title,
-                            page.domain),
-                        Expressions.constant(Collections.emptyList()),
-                        feedItem.highlightCount,
-                        feedItem.firstHighlightAt)
-                )
-                .from(feedItem)
-                .join(feedItem.user, user)
-                .join(feedItem.page, page)
-                .where(feedItem.id.in(feedItemIds))
-                .orderBy(
-                        feedItem.firstHighlightAt.desc(),
-                        feedItem.id.desc())
-                .fetch();
-    }
-    
-    @Override
-    public List<FeedItemDto> findPrivateAndMentionedFeeds(Long userId, int limit) {
-        BooleanExpression existHighlight = feedItem.highlightCount.gt(0);
-        BooleanExpression privateCondition = feedItem.visibility.eq(FeedVisibility.PRIVATE).and(feedItem.user.id.eq(userId));
-        
-        // mention 조건을 EXISTS 서브쿼리로 변경하여 조인 없이 처리
-        BooleanExpression mentionCondition = feedItem.visibility.eq(FeedVisibility.MENTIONED)
-                .and(JPAExpressions.selectOne()
-                        .from(mention)
-                        .join(mention.highlight, highlight)
-                        .where(
-                                highlight.page.eq(feedItem.page)
-                                        .and(mention.mentionedUser.id.eq(userId)))
-                        .exists());
-
-        List<Long> feedItemIds = queryFactory
-                .select(feedItem.id)
-                .from(feedItem)
-                .where(
-                    privateCondition.or(mentionCondition)
-                        .and(existHighlight))
-                .orderBy(
-                    feedItem.firstHighlightAt.desc(),
-                    feedItem.id.desc()
-                )
-                .limit(limit)
-                .fetch();
-
-        if (feedItemIds.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        return queryFactory
-                .select(
-                    new QFeedItemDto(
-                        feedItem.id,
-                        new QUserDto(
-                            user.id,
-                            user.username,
-                            user.nickName),
-                        new QPageDto(
-                            page.id,
-                            page.url,
-                            page.title,
-                            page.domain),
-                        Expressions.constant(Collections.emptyList()),
-                        feedItem.highlightCount,
-                        feedItem.firstHighlightAt)
-                )
-                .from(feedItem)
-                .join(feedItem.user, user)
-                .join(feedItem.page, page)
-                .where(feedItem.id.in(feedItemIds))
-                .orderBy(
-                        feedItem.firstHighlightAt.desc(),
-                        feedItem.id.desc())
-                .fetch();
     }
 
     private BooleanExpression createCursorCondition(LocalDateTime cursorFirstHighlightAt, Long cursorId) {

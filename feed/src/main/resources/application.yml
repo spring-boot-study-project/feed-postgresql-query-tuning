@@ -1,7 +1,15 @@
 server:
     port: 9010
+    tomcat:
+      threads:
+        max: 300              # 기본 200 → 300으로 증가
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
   jackson:
     serialization:
       write-dates-as-timestamps: false
@@ -18,17 +26,23 @@ spring:
     password: 1234
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
-      leak-detection-threshold: 60000
+      maximum-pool-size: 120   # 200 → 120으로 조정 (PostgreSQL 실제 가용 커넥션 고려)
+      minimum-idle: 60         # 100 → 60으로 조정 (안정성 확보)
+      connection-timeout: 10000 # 3000 → 10000으로 증가 (10초, 안정성 우선)
+      idle-timeout: 300000     # 600000 → 300000으로 단축 (5분)
+      max-lifetime: 900000     # 1800000 → 900000으로 단축 (15분)
+      leak-detection-threshold: 10000  # 30000 → 10000으로 단축 (빠른 리크 감지)
+      validation-timeout: 1000 # 연결 검증 타임아웃 1초
+      initialization-fail-timeout: 5000  # 초기화 실패 타임아웃
+      connection-test-query: "SELECT 1"  # 빠른 연결 테스트 쿼리
+      auto-commit: false       # 자동 커밋 비활성화로 성능 향상
+      read-only: false
+      isolate-internal-queries: true  # 내부 쿼리 격리
   
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -43,16 +57,18 @@ spring:
     redis:
       host: localhost
       port: 6379
-      timeout: 2000ms
+      timeout: 5000ms
       lettuce:
         pool:
-          max-active: 8
-          max-idle: 8
-          min-idle: 0
+          max-active: 100       # 50 → 100으로 증가
+          max-idle: 30          # 20 → 30으로 증가
+          min-idle: 15          # 10 → 15로 증가
+          max-wait: 3000ms
+        shutdown-timeout: 100ms
 
 logging:
   level:
-    org.hibernate.stat: DEBUG
-    org.springframework.cache: DEBUG
-    org.springframework.data.redis: DEBUG
-    com.postgresql.feed.service.FeedService: DEBUG
+    org.hibernate.stat: WARN
+    org.springframework.cache: WARN
+    org.springframework.data.redis: WARN
+    com.postgresql.feed.service.FeedService: INFO
