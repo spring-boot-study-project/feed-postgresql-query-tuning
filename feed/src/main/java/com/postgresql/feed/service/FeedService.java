@@ -78,7 +78,7 @@ public class FeedService {
                 .map(item -> item.page().id())
                 .collect(Collectors.toList());
         
-        List<HighlightDto> highlights = feedItemRepository.findHighlightsByPages(userId, pageIds);
+        List<HighlightDto> highlights = feedItemRepository.findHighlightsByPages(pageIds);
 
 
         // 순차적 처리 방식: highlights가 pageIds 배열 순서(feedItems의 first_highlight_at DESC 순서)로

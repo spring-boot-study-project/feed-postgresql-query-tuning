@@ -22,4 +22,12 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+        generate_statistics: true
+        order_inserts: true
+        order_updates: true
+        default_batch_fetch_size: 100
     open-in-view: false
+
+logging:
+  level:
+    org.hibernate.stat: DEBUG

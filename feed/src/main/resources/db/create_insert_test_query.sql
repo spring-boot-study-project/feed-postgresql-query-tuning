@@ -3,7 +3,7 @@ INSERT INTO
     users (
         username,
         email,
-        nickName,
+        nick_name,
         profile_image_url,
         status,
         created_at,

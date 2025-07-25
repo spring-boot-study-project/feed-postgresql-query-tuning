@@ -40,7 +40,7 @@ public interface FeedItemRepository extends JpaRepository<FeedItem, Long>, FeedI
                 WHERE h.page_id IN :pageIds
             ) h
             WHERE h.rn <= 3
-            ORDER BY h.user_id = :userId AND h.page_id, h.rn
+            ORDER BY h.page_id, h.rn
             """, nativeQuery = true)
-    List<HighlightDto> findHighlightsByPages(@Param("userId") Long userId, @Param("pageIds") List<Long> pageIds);
+    List<HighlightDto> findHighlightsByPages(@Param("pageIds") List<Long> pageIds);
 }
