@@ -1,8 +1,5 @@
 server:
     port: 9010
-    tomcat:
-      threads:
-        max: 300              # 기본 200 → 300으로 증가
 
 spring:
   servlet:
@@ -26,8 +23,8 @@ spring:
     password: 1234
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 120   # 200 → 120으로 조정 (PostgreSQL 실제 가용 커넥션 고려)
-      minimum-idle: 60         # 100 → 60으로 조정 (안정성 확보)
+      maximum-pool-size: 250   # 200 → 120으로 조정 (PostgreSQL 실제 가용 커넥션 고려)
+      minimum-idle: 100         # 100 → 60으로 조정 (안정성 확보)
       connection-timeout: 10000 # 3000 → 10000으로 증가 (10초, 안정성 우선)
       idle-timeout: 300000     # 600000 → 300000으로 단축 (5분)
       max-lifetime: 900000     # 1800000 → 900000으로 단축 (15분)
