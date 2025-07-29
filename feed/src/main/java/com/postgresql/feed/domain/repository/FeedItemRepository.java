@@ -24,12 +24,7 @@ public interface FeedItemRepository extends JpaRepository<FeedItem, Long>, FeedI
      * @return 하이라이트 DTO 목록 (페이지당 최대 3개)
      */
     @Query(value = """
-            SELECT h.id,
-                   h.text,
-                   h.color,
-                   h.created_at as createdAt,
-                   h.page_id as feedItemId
-            FROM (
+            WITH ranked_highlights AS (
                 SELECT h.id,
                        h.text,
                        h.color,
@@ -37,10 +32,16 @@ public interface FeedItemRepository extends JpaRepository<FeedItem, Long>, FeedI
                        h.page_id,
                        ROW_NUMBER() OVER (PARTITION BY h.page_id ORDER BY h.created_at DESC) as rn
                 FROM highlights h
-                WHERE h.page_id IN :pageIds
-            ) h
-            WHERE h.rn <= 3
-            ORDER BY h.page_id, h.rn
+                WHERE h.page_id IN (:pageIds)
+            )
+            SELECT id,
+                   text,
+                   color,
+                   created_at as createdAt,
+                   page_id as feedItemId
+            FROM ranked_highlights
+            WHERE rn <= 3
+            ORDER BY page_id, rn
             """, nativeQuery = true)
     List<HighlightDto> findHighlightsByPages(@Param("pageIds") List<Long> pageIds);
 }
